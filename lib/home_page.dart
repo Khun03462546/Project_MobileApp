@@ -1,265 +1,88 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:myfridge_test/Summary_page.dart';
+import 'package:myfridge_test/food_item.dart';
 import 'package:myfridge_test/scanner.dart';
-import 'setting_page.dart';
-import 'notification_service.dart'; // <-- import
-
-class FoodItem {
-  final String id;
-  final String productName;
-  final String category;
-  final DateTime? addedAt;
-  final DateTime? expiryDate;
-  final int? quantity;
-  final String? imageUrl;
-  final String userId;
-
-  FoodItem({
-    required this.id,
-    required this.productName,
-    required this.category,
-    required this.userId,
-    this.imageUrl,
-    this.addedAt,
-    this.expiryDate,
-    this.quantity,
-  });
-
-  factory FoodItem.fromFirestore(DocumentSnapshot doc) {
-    try {
-      final data = doc.data() as Map<String, dynamic>? ?? {};
-      return FoodItem(
-        id: doc.id,
-        productName: data['productName']?.toString() ?? 'Unnamed',
-        category: data['category']?.toString() ?? 'Other',
-        userId: data['userId']?.toString() ?? '',
-        imageUrl: data['imageUrl']?.toString(),
-        addedAt: data['addedAt'] != null
-            ? (data['addedAt'] is Timestamp
-                ? (data['addedAt'] as Timestamp).toDate()
-                : DateTime.tryParse(data['addedAt'].toString()))
-            : null,
-        expiryDate: data['expiryDate'] != null
-            ? (data['expiryDate'] is Timestamp
-                ? (data['expiryDate'] as Timestamp).toDate()
-                : DateTime.tryParse(data['expiryDate'].toString()))
-            : null,
-        quantity: data['quantity'] != null
-            ? int.tryParse(data['quantity'].toString())
-            : null,
-      );
-    } catch (e) {
-      print("Error parsing FoodItem: $e");
-      return FoodItem(
-        id: '',
-        productName: 'Unnamed',
-        category: 'Other',
-        userId: '',
-      );
-    }
-  }
-}
+import 'package:myfridge_test/Summary_page.dart';
+import 'package:myfridge_test/setting_page.dart';
+import 'package:myfridge_test/login_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final String? usersName;
+  final String? usersEmail;
+
+  const HomePage({super.key, this.usersName, this.usersEmail});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  String selectedCategory = 'All';
   final User? _currentUser = FirebaseAuth.instance.currentUser;
-  late CollectionReference foodCollection;
+  String selectedCategory = 'All';
+  final List<String> categories = ['All', 'Meat', 'Vegetable', 'Fruit'];
 
-  final Map<String, String> categoryMapping = {
-    'pork': 'Meat',
-    'beef': 'Meat',
-    'chicken': 'Meat',
-    'meat': 'Meat',
-    'fruit': 'Fruit',
-    'vegetable': 'Vegetable',
-
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    foodCollection = FirebaseFirestore.instance.collection('Fridge');
-  }
+  final List<AppNotification> _mockNotifications = [];
 
   Query _getUserFoodQuery() {
-    if (_currentUser == null) {
-      return foodCollection.where('userId', isEqualTo: 'invalid');
-    }
-    return foodCollection.where('userId', isEqualTo: _currentUser!.uid);
+    return FirebaseFirestore.instance
+        .collection('Fridge')
+        .where('userId', isEqualTo: _currentUser?.uid);
   }
 
-  String getMainCategory(String category) {
-    return categoryMapping[category.toLowerCase()] ?? 'Other';
-  }
-
-  void _checkExpiringSoon(List<FoodItem> items) async {
-    final now = DateTime.now();
-    final expiringSoon = items.where((item) {
-      if (item.expiryDate == null) return false;
-      final difference = item.expiryDate!.difference(now).inDays;
-      return difference >= 0 && difference <= 2;
-    }).toList();
-
-    if (expiringSoon.isNotEmpty) {
-      String names = expiringSoon.map((e) => e.productName).join(', ');
-      await NotificationService.showNotification(
-        id: 1,
-        title: "อาหารใกล้หมดอายุ",
-        body: "อาหารเหล่านี้ใกล้หมดอายุภายใน 2 วัน: $names",
-      );
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'meat':
+        return Colors.redAccent;
+      case 'vegetable':
+        return Colors.green;
+      case 'fruit':
+        return Colors.orange;
+      case 'all':
+        return const Color(0xFF6F398E);
+      default:
+        return Colors.grey;
     }
   }
 
-  Future<void> _showNotifications() async {
-    final snapshot = await _getUserFoodQuery().get();
-    List<FoodItem> items = snapshot.docs.map((doc) => FoodItem.fromFirestore(doc)).toList();
-    final now = DateTime.now();
-    final expiringSoon = items.where((item) {
-      if (item.expiryDate == null) return false;
-      final difference = item.expiryDate!.difference(now).inDays;
-      return difference >= 0 && difference <= 2;
-    }).toList();
+  int get unreadNotifications =>
+      _mockNotifications.where((n) => !n.isRead).length;
 
-    if (expiringSoon.isNotEmpty) {
-      String names = expiringSoon.map((e) => e.productName).join(', ');
-      await NotificationService.showNotification(
-        id: 2,
-        title: "อาหารใกล้หมดอายุ",
-        body: "อาหารเหล่านี้ใกล้หมดอายุภายใน 2 วัน: $names",
-      );
-    } else {
-      await NotificationService.showNotification(
-        id: 3,
-        title: "ไม่มีอาหารใกล้หมดอายุ",
-        body: "ทุกอย่างยังดีอยู่ในตู้เย็น",
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_currentUser == null) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('กรุณาล็อกอินเพื่อดูข้อมูล'),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushReplacementNamed(context, '/login');
-                },
-                child: const Text('ไปหน้าล็อกอิน'),
+  void _showNotifications() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text("Notifications"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children:
+                  _mockNotifications
+                      .map(
+                        (n) => ListTile(
+                          leading: Icon(
+                            n.isRead
+                                ? Icons.notifications_none
+                                : Icons.notification_important,
+                            color: n.isRead ? Colors.grey : Colors.red,
+                          ),
+                          title: Text(n.title),
+                          subtitle: Text(n.message),
+                        ),
+                      )
+                      .toList(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("ปิด"),
               ),
             ],
           ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      drawer: _buildDrawer(),
-      appBar: AppBar(
-        centerTitle: true,
-        title: const Text(
-          'Fridge',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: const Color(0xFF6F398E),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.white),
-            onPressed: _showNotifications, // <-- กดกระดิ่งแจ้งเตือน
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildFilterChips(),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _getUserFoodQuery().snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Center(child: Text("Error loading data"));
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                List<FoodItem> items = snapshot.data!.docs
-                    .map((doc) => FoodItem.fromFirestore(doc))
-                    .toList();
-
-                if (selectedCategory != 'All') {
-                  items = items
-                      .where((item) =>
-                          getMainCategory(item.category).toLowerCase() ==
-                          selectedCategory.toLowerCase())
-                      .toList();
-                }
-
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _checkExpiringSoon(items);
-                });
-
-                if (items.isEmpty) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.kitchen, size: 64, color: Colors.grey),
-                        SizedBox(height: 16),
-                        Text(
-                          "ไม่มีอาหารในตู้เย็น",
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          "กดปุ่ม + เพื่อเพิ่มอาหาร",
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (_, index) => _buildFoodItemCard(items[index]),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF6F398E),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => BarcodeScannerPage()),
-          );
-        },
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
     );
   }
 
   Widget _buildDrawer() {
-    final user = FirebaseAuth.instance.currentUser;
     return Drawer(
       child: Container(
         decoration: const BoxDecoration(
@@ -274,84 +97,61 @@ class _HomePageState extends State<HomePage> {
             UserAccountsDrawerHeader(
               decoration: const BoxDecoration(color: Colors.transparent),
               accountName: Text(
-                user?.displayName ?? "User",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
+                _currentUser?.displayName ?? "User",
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               accountEmail: Text(
-                user?.email ?? "No Email",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                _currentUser?.email ?? "No Email",
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               currentAccountPicture: const CircleAvatar(
                 backgroundColor: Colors.white,
                 child: Icon(Icons.person, color: Colors.black),
               ),
             ),
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  ListTile(
-                    tileColor: Colors.transparent,
-                    leading: const Icon(Icons.article, color: Colors.white),
-                    title: const Text(
-                      'Summary',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SummaryPage()),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    tileColor: Colors.transparent,
-                    leading: const Icon(Icons.settings, color: Colors.white),
-                    title: const Text(
-                      'Settings',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingPage()),
-                      );
-                    },
-                  ),
-                ],
+            ListTile(
+              leading: const Icon(Icons.article, color: Colors.white),
+              title: const Text(
+                'Summary',
+                style: TextStyle(color: Colors.white),
               ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SummaryPage()),
+                );
+              },
             ),
             ListTile(
-              tileColor: Colors.transparent,
+              leading: const Icon(Icons.settings, color: Colors.white),
+              title: const Text(
+                'Settings',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingPage()),
+                );
+              },
+            ),
+            const Spacer(),
+            ListTile(
               leading: const Icon(Icons.exit_to_app, color: Colors.redAccent),
               title: const Text(
                 'Logout',
-                style: TextStyle(
-                  color: Colors.redAccent,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(color: Colors.redAccent),
               ),
               onTap: () async {
                 await FirebaseAuth.instance.signOut();
                 if (!mounted) return;
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                  (route) => false,
+                );
               },
             ),
           ],
@@ -360,131 +160,258 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildFilterChips() {
-    final categories = ['All', 'Fruit', 'Vegetable', 'Meat', 'Dairy', 'Beverage'];
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      alignment: Alignment.centerLeft,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: categories
-              .map(
-                (category) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    label: Text(category),
-                    selected: selectedCategory.toLowerCase() ==
-                        category.toLowerCase(),
-                    selectedColor: const Color(0xFF6F398E),
-                    backgroundColor: Colors.grey.shade200,
-                    labelStyle: TextStyle(
-                      color: selectedCategory.toLowerCase() ==
-                              category.toLowerCase()
-                          ? Colors.white
-                          : Colors.black,
-                    ),
-                    checkmarkColor: Colors.white,
-                    onSelected: (_) {
-                      setState(() => selectedCategory = category);
-                    },
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      drawer: _buildDrawer(),
+      body: Column(
+        children: [
+          _buildAppBar(),
+          _buildFilterChips(),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _getUserFoodQuery().snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Error loading data'));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                List<FoodItem> items =
+                    snapshot.data!.docs
+                        .map((doc) => FoodItem.fromFirestore(doc))
+                        .toList();
+
+                if (selectedCategory != 'All') {
+                  items =
+                      items
+                          .where(
+                            (item) =>
+                                item.category.toLowerCase() ==
+                                selectedCategory.toLowerCase(),
+                          )
+                          .toList();
+                }
+
+                final now = DateTime.now();
+                final expiringNotifications =
+                    items
+                        .where((item) {
+                          final exp = item.expirationDate;
+                          return exp != null && exp.difference(now).inDays <= 2;
+                        })
+                        .map(
+                          (item) => AppNotification(
+                            'Expiring Soon',
+                            '${item.name} expires in ${item.expirationDate!.difference(now).inDays} day(s)',
+                            false,
+                          ),
+                        )
+                        .toList();
+
+                _mockNotifications
+                  ..clear()
+                  ..addAll(expiringNotifications);
+
+                if (items.isEmpty) {
+                  return const Center(child: Text('ตู้เย็นยังว่างกดปุ่ม + เพื่อเพิ่มของได้เลย!'));
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.85,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
                   ),
-                ),
-              )
-              .toList(),
-        ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return _buildFoodCard(item);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF6F398E),
+        child: const Icon(Icons.add, color: Colors.white),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const BarcodeScannerPage()),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildFoodItemCard(FoodItem item) {
-    IconData icon;
-    Color iconColor;
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      centerTitle: true,
+      elevation: 0,
+      title: const Text(
+        'Your Fridge',
+        style: TextStyle(
+          color: const Color(0xFF6F398E),
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      iconTheme: const IconThemeData(color: const Color(0xFF6F398E)),
+      actions: [_buildNotificationIcon()],
+    );
+  }
 
-    switch (getMainCategory(item.category).toLowerCase()) {
-      case 'fruit':
-        icon = Icons.apple;
-        iconColor = Colors.red;
-        break;
-      case 'vegetable':
-        icon = Icons.grass;
-        iconColor = Colors.green;
-        break;
-      case 'meat':
-        icon = Icons.set_meal;
-        iconColor = Colors.brown;
-        break;
-      case 'dairy':
-        icon = Icons.local_drink;
-        iconColor = Colors.yellow;
-        break;
-      case 'beverage':
-        icon = Icons.local_cafe;
-        iconColor = Colors.blue;
-        break;
-      default:
-        icon = Icons.fastfood;
-        iconColor = Colors.grey;
-    }
-
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              flex: 1,
-              child: Center(
-                child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        item.imageUrl!,
-                        fit: BoxFit.cover,
-                        height: 120,
-                        width: 120,
-                      )
-                    : Icon(
-                        icon,
-                        size: 80,
-                        color: iconColor,
-                      ),
+  Widget _buildNotificationIcon() {
+    return Stack(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications, color: const Color(0xFF6F398E)),
+          onPressed: _showNotifications,
+        ),
+        if (unreadNotifications > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$unreadNotifications',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.productName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 20),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFilterChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children:
+            categories.map((category) {
+              final isSelected = selectedCategory == category;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: ChoiceChip(
+                  label: Row(
+                    children: [
+                      Text(category),
+                      if (isSelected)
+                        const Padding(padding: EdgeInsets.only(left: 4)),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Text('Category: ${getMainCategory(item.category)}',
-                      style: const TextStyle(fontSize: 16)),
-                  if (item.quantity != null)
-                    Text('Quantity: ${item.quantity}',
-                        style: const TextStyle(fontSize: 16)),
-                  if (item.addedAt != null)
-                    Text(
-                        'Added: ${item.addedAt!.day}/${item.addedAt!.month}/${item.addedAt!.year}',
-                        style: const TextStyle(fontSize: 16)),
-                  if (item.expiryDate != null)
-                    Text(
-                        'Expires: ${item.expiryDate!.day}/${item.expiryDate!.month}/${item.expiryDate!.year}',
-                        style: const TextStyle(
-                            fontSize: 16, color: Colors.redAccent)),
-                ],
-              ),
+                  selected: isSelected,
+                  selectedColor: _getCategoryColor(category),
+                  backgroundColor: Colors.grey.shade200,
+                  labelStyle: TextStyle(
+                    color:
+                        isSelected ? Colors.white : _getCategoryColor(category),
+                  ),
+                  onSelected: (_) {
+                    setState(() => selectedCategory = category);
+                  },
+                ),
+              );
+            }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildFoodCard(FoodItem item) {
+    final color = _getCategoryColor(item.category);
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.fastfood, size: 32, color: color),
+            const SizedBox(height: 8),
+            Text(
+              item.name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Category: ${item.category}',
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.expirationDate != null
+                  ? 'Exp: ${item.expirationDate!.day}/${item.expirationDate!.month}/${item.expirationDate!.year}'
+                  : 'Exp: N/A',
+              style: const TextStyle(fontSize: 14, color: Colors.redAccent),
             ),
           ],
         ),
       ),
     );
   }
+
+  List<AppNotification> _generateExpiringNotifications(List<FoodItem> items) {
+    final now = DateTime.now();
+    final List<AppNotification> notifications = [];
+
+    for (var item in items) {
+      final exp = item.expirationDate;
+      if (exp != null) {
+        final daysLeft = exp.difference(now).inDays;
+        if (daysLeft >= 0 && daysLeft <= 2) {
+          notifications.add(
+            AppNotification(
+              'Expiring Soon',
+              '${item.name} expires in $daysLeft day${daysLeft == 1 ? '' : 's'}',
+              false,
+            ),
+          );
+        }
+      }
+    }
+
+    return notifications;
+  }
+}
+
+class BottomCurveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(0, size.height - 30);
+    path.quadraticBezierTo(
+      size.width / 2,
+      size.height,
+      size.width,
+      size.height - 30,
+    );
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
+}
+
+class AppNotification {
+  final String title;
+  final String message;
+  final bool isRead;
+
+  AppNotification(this.title, this.message, this.isRead);
 }

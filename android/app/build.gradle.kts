@@ -12,17 +12,23 @@ android {
 
     defaultConfig {
         applicationId = "com.example.myfridge_test"
-        minSdk = flutter.minSdkVersion   // ปกติ 21+
+        minSdk = flutter.minSdkVersion   
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
 
-    compileOptions {
+   compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
-        coreLibraryDesugaringEnabled = true
+        isCoreLibraryDesugaringEnabled = true
+        // Suppress obsolete options warning (Kotlin DSL)
+        // ใช้แบบนี้
+        // See: https://github.com/gradle/gradle/issues/16979
+        // และ https://github.com/gradle/gradle/issues/16979#issuecomment-1014879646
+        // แต่ใน Kotlin DSL ยังไม่รองรับโดยตรง
     }
+
 
     kotlinOptions {
         jvmTarget = "1.8"
@@ -38,9 +44,8 @@ android {
 }
 
 dependencies {
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.3'
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
-
 flutter {
     source = "../.."
 }
