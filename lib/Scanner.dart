@@ -28,6 +28,9 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     _animation = Tween<double>(begin: 0.1, end: 0.9).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.linear),
     );
+
+    // ตรวจสอบโครงสร้าง Firestore เมื่อเริ่มต้น
+    _checkFirestoreStructure();
   }
 
   @override
@@ -36,32 +39,150 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     super.dispose();
   }
 
-  // ฟังก์ชันค้นหาสินค้าในตาราง products
-  Future<Map<String, dynamic>?> _findProductInDatabase(String barcode) async {
+  // ฟังก์ชันตรวจสอบโครงสร้าง Firestore
+  void _checkFirestoreStructure() async {
     try {
-      final QuerySnapshot querySnapshot = await FirebaseFirestore.instance
+      print('🔍 Checking Firestore structure...');
+      
+      final productsSnapshot = await FirebaseFirestore.instance
+          .collection('products')
+          .limit(5)
+          .get();
+
+      print('📦 Total products in collection: ${productsSnapshot.docs.length}');
+      
+      if (productsSnapshot.docs.isNotEmpty) {
+        print('📋 Sample products structure:');
+        for (var i = 0; i < productsSnapshot.docs.length; i++) {
+          final doc = productsSnapshot.docs[i];
+          final data = doc.data();
+          print('   Product ${i + 1}:');
+          data.forEach((key, value) {
+            print('     $key: $value (${value.runtimeType})');
+          });
+          print('   ---');
+        }
+      } else {
+        print('❌ No products found in collection');
+        print('💡 Please add some products to the "products" collection');
+      }
+    } catch (e) {
+      print('🚨 Error checking Firestore structure: $e');
+    }
+  }
+
+  // ฟังก์ชันค้นหา Document ID จาก barcode
+  Future<String?> _findProductDocumentId(String barcode) async {
+    try {
+      print('🔍 Searching for barcode: "$barcode"');
+      
+      // ลองค้นหาทั้งแบบ string และ number
+      final searchMethods = [
+        _searchWithString(barcode),
+        _searchWithNumber(barcode),
+        _searchWithTrimmedString(barcode),
+      ];
+
+      for (var method in searchMethods) {
+        final result = await method;
+        if (result != null) {
+          return result;
+        }
+      }
+
+      print('❌ No product found with barcode: $barcode');
+      return null;
+    } catch (e) {
+      print('🚨 Error searching product document ID: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _searchWithString(String barcode) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
           .collection('products')
           .where('barcode', isEqualTo: barcode)
           .limit(1)
           .get();
 
       if (querySnapshot.docs.isNotEmpty) {
-        final doc = querySnapshot.docs.first;
+        print('✅ Found with string search: "$barcode"');
+        return querySnapshot.docs.first.id;
+      }
+    } catch (e) {
+      print('⚠️ String search failed: $e');
+    }
+    return null;
+  }
+
+  Future<String?> _searchWithNumber(String barcode) async {
+    try {
+      final barcodeNumber = num.tryParse(barcode);
+      if (barcodeNumber != null) {
+        final querySnapshot = await FirebaseFirestore.instance
+            .collection('products')
+            .where('barcode', isEqualTo: barcodeNumber)
+            .limit(1)
+            .get();
+
+        if (querySnapshot.docs.isNotEmpty) {
+          print('✅ Found with number search: $barcodeNumber');
+          return querySnapshot.docs.first.id;
+        }
+      }
+    } catch (e) {
+      print('⚠️ Number search failed: $e');
+    }
+    return null;
+  }
+
+  Future<String?> _searchWithTrimmedString(String barcode) async {
+    try {
+      final trimmedBarcode = barcode.trim();
+      if (trimmedBarcode != barcode) {
+        final querySnapshot = await FirebaseFirestore.instance
+            .collection('products')
+            .where('barcode', isEqualTo: trimmedBarcode)
+            .limit(1)
+            .get();
+
+        if (querySnapshot.docs.isNotEmpty) {
+          print('✅ Found with trimmed search: "$trimmedBarcode"');
+          return querySnapshot.docs.first.id;
+        }
+      }
+    } catch (e) {
+      print('⚠️ Trimmed search failed: $e');
+    }
+    return null;
+  }
+
+  // ฟังก์ชันดึงข้อมูลสินค้าจาก Document ID
+  Future<Map<String, dynamic>?> _getProductById(String documentId) async {
+    try {
+      final DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('products')
+          .doc(documentId)
+          .get();
+
+      if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
-        
+        print('✅ Retrieved product: ${data['name']}');
         return {
           'id': doc.id,
-          'barcode': data['barcode'] ?? barcode,
+          'barcode': data['barcode']?.toString() ?? '',
           'name': data['name'] ?? 'Unknown Product',
           'category': data['category'] ?? 'Other',
-          'shelfLife': data['shelfLife'] ?? 7, // default 7 days
+          'shelfLife': data['shelfLife'] ?? 7,
           'imageUrl': data['imageUrl'] ?? '',
           'unit': data['unit'] ?? 'ชิ้น',
+          'brand': data['brand'] ?? '',
         };
       }
       return null;
     } catch (e) {
-      print('Error searching product: $e');
+      print('🚨 Error getting product by ID: $e');
       return null;
     }
   }
@@ -73,6 +194,8 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       if (user == null) {
         throw Exception('User not logged in');
       }
+
+      print('👤 Adding to fridge for user: ${user.uid}');
 
       // ตรวจสอบว่าสินค้ามีอยู่ในตู้เย็นแล้วหรือไม่
       final QuerySnapshot existingProduct = await FirebaseFirestore.instance
@@ -91,6 +214,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
           'quantity': FieldValue.increment(1),
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        print('📈 Updated existing product quantity');
       } else {
         // เพิ่มสินค้าใหม่ถ้ายังไม่มี
         await FirebaseFirestore.instance.collection('Fridge').add({
@@ -105,21 +229,21 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
           'expiryDate': _calculateExpiryDate(product),
           'imageUrl': product['imageUrl'],
           'unit': product['unit'],
+          'brand': product['brand'],
         });
+        print('✅ Added new product to fridge');
       }
     } catch (e) {
-      print('Error adding to fridge: $e');
+      print('🚨 Error adding to fridge: $e');
       rethrow;
     }
   }
 
-  // คำนวณวันหมดอายุ
   DateTime _calculateExpiryDate(Map<String, dynamic> product) {
     final int daysToExpiry = product['shelfLife'] ?? 7;
     return DateTime.now().add(Duration(days: daysToExpiry));
   }
 
-  // ฟังก์ชันจัดการเมื่อสแกนพบบาร์โค้ด
   Future<void> _handleBarcodeDetected(String code) async {
     if (_isDialogShown || _isProcessing) return;
     
@@ -128,19 +252,24 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       _isDialogShown = true;
     });
 
+    print('🎯 Barcode detected: $code');
+
     try {
-      // ค้นหาสินค้าในฐานข้อมูล
-      final Map<String, dynamic>? product = await _findProductInDatabase(code);
+      final String? productDocId = await _findProductDocumentId(code);
       
-      if (product != null) {
-        // เพิ่มสินค้าลงในตู้เย็น
-        await _addToFridge(product);
+      if (productDocId != null) {
+        final Map<String, dynamic>? product = await _getProductById(productDocId);
         
-        // แสดงผลลัพธ์การสแกนสำเร็จ
-        if (!mounted) return;
-        _showSuccessDialog(product);
+        if (product != null) {
+          await _addToFridge(product);
+          
+          if (!mounted) return;
+          _showSuccessDialog(product);
+        } else {
+          if (!mounted) return;
+          _showProductNotFoundDialog(code);
+        }
       } else {
-        // ไม่พบสินค้าในฐานข้อมูล
         if (!mounted) return;
         _showProductNotFoundDialog(code);
       }
@@ -164,7 +293,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
                 _isProcessing = false;
               });
               Navigator.of(context).pop();
-              Navigator.of(context).pop(true); // ส่งค่า success กลับ
+              Navigator.of(context).pop(true);
             },
             child: const Text('ตกลง'),
           ),
@@ -178,7 +307,21 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('ไม่พบสินค้า'),
-        content: Text('ไม่พบข้อมูลสินค้าสำหรับบาร์โค้ด: $barcode'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ไม่พบข้อมูลสินค้าสำหรับบาร์โค้ด: $barcode'),
+            const SizedBox(height: 16),
+            const Text(
+              '⚠️ หมายเหตุ:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const Text('• ตรวจสอบว่าสินค้ามีในฐานข้อมูลหรือไม่'),
+            const Text('• ตรวจสอบรูปแบบข้อมูลใน Firestore'),
+            const Text('• ดู log ใน console สำหรับข้อมูลเพิ่มเติม'),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () {
@@ -189,20 +332,6 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
               Navigator.of(context).pop();
             },
             child: const Text('ตกลง'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _isDialogShown = false;
-                _isProcessing = false;
-              });
-              Navigator.of(context).pop();
-              // นำทางไปหน้าเพิ่มสินค้าใหม่
-              // Navigator.push(context, MaterialPageRoute(
-              //   builder: (_) => AddProductPage(barcode: barcode)
-              // ));
-            },
-            child: const Text('เพิ่มสินค้า'),
           ),
         ],
       ),

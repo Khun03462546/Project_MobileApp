@@ -10,30 +10,35 @@ android {
     namespace = "com.example.myfridge_test"
     compileSdk = 36
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
     defaultConfig {
         applicationId = "com.example.myfridge_test"
-        minSdk = flutter.minSdkVersion
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion   // ปกติ 21+
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled = true
+    }
+
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = true      
-            isShrinkResources = true    
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.3'
 }
 
 flutter {

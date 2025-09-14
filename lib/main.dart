@@ -3,10 +3,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'login_page.dart';
 import 'create_page.dart';
 import 'home_page.dart';
+import 'notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await NotificationService.init();
   runApp(const MyApp());
 }
 
