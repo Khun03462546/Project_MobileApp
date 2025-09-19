@@ -25,33 +25,37 @@ class FoodItem {
     try {
       final data = doc.data() as Map<String, dynamic>? ?? {};
 
+      final name = data['productName']?.toString() ?? 'Unnamed';
+      final category = data['category']?.toString() ?? 'Other';
+      final userId = data['userId']?.toString() ?? '';
+
       return FoodItem(
         id: doc.id,
-        name: data['productName']?.toString() ?? 'Unnamed',
-        category: data['category']?.toString() ?? 'Other',
-        userId: data['userId']?.toString() ?? '',
+        name: name,
+        category: category,
+        userId: userId,
         imageUrl: data['imageUrl']?.toString(),
-        expirationDate:
-            data['expiryDate'] != null
-                ? (data['expiryDate'] is Timestamp
-                    ? (data['expiryDate'] as Timestamp).toDate()
-                    : DateTime.tryParse(data['expiryDate'].toString()))
-                : null,
-
-        addedDate:
-            data['addedAt'] != null
-                ? (data['addedAt'] is Timestamp
-                    ? (data['addedAt'] as Timestamp).toDate()
-                    : DateTime.tryParse(data['addedAt'].toString()))
-                : null,
-        weight:
-            data['weight'] != null
-                ? double.tryParse(data['weight'].toString())
-                : null,
+        expirationDate: _parseDate(data['expiryDate']),
+        addedDate: _parseDate(data['addedAt']),
+        weight: data['quantity'] != null
+            ? double.tryParse(data['quantity'].toString())
+            : null,
       );
     } catch (e) {
       print("Error parsing FoodItem: $e");
-      return FoodItem(id: '', name: 'Unnamed', category: 'Other', userId: '');
+      return FoodItem(
+        id: '',
+        name: 'Unnamed',
+        category: 'Other',
+        userId: '',
+      );
     }
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 }

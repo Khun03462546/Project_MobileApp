@@ -223,7 +223,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
           'productName': product['name'],
           'barcode': product['barcode'],
           'category': product['category'],
-          'quantity': 1,
+          'quantity': 2.5,
           'addedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
           'expiryDate': _calculateExpiryDate(product),
